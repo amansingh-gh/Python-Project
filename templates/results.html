@@ -1,47 +1,71 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voting Results</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <style>
-        body {
-            background: linear-gradient(135deg, #1e3c72, #2a5298);
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-        }
-        .results-card {
-            max-width: 500px;
-            border-radius: 15px;
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-            background: rgba(255, 255, 255, 0.15);
-            backdrop-filter: blur(10px);
-            padding: 70px;
-            color: white;
-        }
-        .results-card h2 {
-            font-weight: bold;
-        }
-        .list-group-item {
-            background: transparent;
-            color: white;
-            border: none;
-            font-size: 1.2rem;
-        }
-    </style>
-</head>
-<body>
-    <div class="results-card">
-        <h2>🏆 Voting Results</h2>
-        <ul class="list-group mt-3">
-            {% for result in results %}
-                <li class="list-group-item">{{ result._id }}: <strong>{{ result.count }} </strong> votes</li>
-            {% endfor %}
-        </ul>
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="text-center">Election Results</h2>
+<p class="text-center mb-4 text-muted">Live voting statistics</p>
+
+<div class="chart-container mb-4" style="position: relative; height:300px;">
+    <canvas id="resultsChart"></canvas>
+</div>
+
+<div class="results-table mb-4">
+    {% for result in results %}
+    <div class="d-flex justify-content-between align-items-center mb-2 p-3 rounded" 
+         style="background: rgba(74, 107, 255, 0.05);">
+        <div>
+            <h5 class="mb-0">{{ result._id }}</h5>
+            <small class="text-muted">{{ (result.count/total_votes*100)|round(1) }}%</small>
+        </div>
+        <span class="badge bg-primary rounded-pill px-3 py-2">{{ result.count }}</span>
     </div>
-</body>
-</html>
+    {% endfor %}
+</div>
+
+<a href="/logout" class="btn btn-vote btn-outline-secondary w-100">Logout</a>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const ctx = document.getElementById('resultsChart').getContext('2d');
+        const results = {{ results|tojson|safe }};
+        
+        const labels = results.map(r => r._id);
+        const data = results.map(r => r.count);
+        const colors = ['#4a6bff', '#4bc0c0', '#ff6384', '#ffcd56'];
+        
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const value = context.raw;
+                                const percentage = Math.round((value / total) * 100);
+                                return `${context.label}: ${value} votes (${percentage}%)`;
+                            }
+                        }
+                    }
+                },
+                cutout: '65%'
+            }
+        });
+    });
+</script>
+{% endblock %}

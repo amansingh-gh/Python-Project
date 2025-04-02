@@ -1,14 +1,16 @@
-from flask import Flask, render_template, request, redirect, session
+from flask import Flask, render_template, request, redirect, session, flash, url_for
 from pymongo import MongoClient
+from bson import ObjectId
+from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = "secret_key"
+app.secret_key = "your-secret-key-123"
 
-# MongoDB connection
+# MongoDB setup
 client = MongoClient("mongodb://localhost:27017/")
-db = client["voting_system"]
-users_collection = db["users"]
-votes_collection = db["votes"]
+db = client["voting_db"]
+users = db.users
+votes = db.votes
 
 @app.route('/')
 def home():
@@ -20,11 +22,17 @@ def register():
         username = request.form['username']
         password = request.form['password']
         
-        if users_collection.find_one({"username": username}):
-            return "User already exists!"
-        
-        users_collection.insert_one({"username": username, "password": password})
-        return redirect('/login')
+        if users.find_one({"username": username}):
+            flash("Username already exists. Please choose another.", "error")
+        else:
+            users.insert_one({
+                "username": username,
+                "password": password,
+                "created_at": datetime.now()
+            })
+            flash("Registration successful! Please login to continue.", "success")
+            return redirect(url_for('login'))
+    
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -32,43 +40,54 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        user = users_collection.find_one({"username": username, "password": password})
+        user = users.find_one({"username": username, "password": password})
         
         if user:
             session['username'] = username
-            return redirect('/vote')
+            return redirect(url_for('vote'))
         else:
-            return "Invalid credentials!"
+            flash("Invalid username or password. Please try again.", "error")
+    
     return render_template('login.html')
 
 @app.route('/vote', methods=['GET', 'POST'])
 def vote():
     if 'username' not in session:
-        return redirect('/login')
+        return redirect(url_for('login'))
     
     if request.method == 'POST':
         candidate = request.form['candidate']
-        username = session['username']
-        
-        if votes_collection.find_one({"username": username}):
-            return "You have already voted!"
-        
-        votes_collection.insert_one({"username": username, "candidate": candidate})
-        return "Vote recorded successfully!"
+        votes.insert_one({
+            "username": session['username'],
+            "candidate": candidate,
+            "voted_at": datetime.now()
+        })
+        flash("Your vote has been submitted successfully!", "success")
+        return redirect(url_for('results'))
     
     return render_template('vote.html')
 
 @app.route('/results')
 def results():
-    vote_counts = votes_collection.aggregate([
-        {"$group": {"_id": "$candidate", "count": {"$sum": 1}}}
-    ])
-    return render_template('results.html', results=vote_counts)
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    
+    results = list(votes.aggregate([
+        {"$group": {"_id": "$candidate", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]))
+    
+    total_votes = sum(result['count'] for result in results)
+    
+    return render_template('results.html', 
+                         results=results, 
+                         total_votes=total_votes)
 
 @app.route('/logout')
 def logout():
     session.pop('username', None)
-    return redirect('/')
+    flash("You have been logged out successfully.", "info")
+    return redirect(url_for('home'))
 
 if __name__ == '__main__':
     app.run(debug=True)
